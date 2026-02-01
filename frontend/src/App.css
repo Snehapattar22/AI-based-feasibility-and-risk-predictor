@@ -1,0 +1,28 @@
+/* HARD RESET */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  min-height: 100vh;
+  width: 100%;
+  background: #0f172a;  /* deep blue */
+  overflow-x: hidden;
+}
+
+
+/* Root wrapper fills entire screen */
+#root {
+  min-height: 100vh;
+  width: 100%;
+  background: #0f172a;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 100px;
+  font-family: "Segoe UI", sans-serif;
+  color: white;
+}
