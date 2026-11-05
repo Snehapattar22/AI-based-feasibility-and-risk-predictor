@@ -73,15 +73,25 @@ async def analyze_pdf(file: UploadFile = File(...)):
 
         ai_data = ai_scene_analysis(script_text) or {}
 
+        risk_factors = ai_data.get("risk_factors", [])
         risk_level = ai_data.get("risk_level", "Medium")
+        role_based = ai_data.get("role_based_risks", {})
+        safety = ai_data.get("safety_instructions", {})
         feasibility = decide_feasibility(risk_level)
+        motion = generate_motion_paths(script_text)
+        collision_report = detect_collisions(
+            motion["actor_path"],
+            motion["camera_path"]
+        )
 
         return SceneOutput(
-            risk_factors=ai_data.get("risk_factors", []),
+            risk_factors=risk_factors,
             risk_level=risk_level,
-            role_based_risks=ai_data.get("role_based_risks", {}),
-            safety_instructions=ai_data.get("safety_instructions", {}),
-            feasibility=feasibility
+            role_based_risks=role_based,
+            safety_instructions=safety,
+            feasibility=feasibility,
+            motion_paths=motion,
+            collision_report=collision_report
         )
 
     finally:

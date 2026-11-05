@@ -1,420 +1,414 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import "./App.css";
 
-export default function App() {
-  const [scene, setScene] = useState("");
-  const [pdf, setPdf] = useState(null);
-  const [mode, setMode] = useState("text"); // text | pdf
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [imageUrl, setImageUrl] = useState(null);
-  const [imageLoading, setImageLoading] = useState(false);
+const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-  /* ---------------- TEXT ANALYSIS ---------------- */
+const sampleScene = `A stunt actor runs across a warehouse floor carrying a prop light while a handheld camera operator follows closely. The scene includes a technician near a hazard zone with cables across the floor and a narrow entrance path beside a loading bay.`;
+
+const featureCards = [
+  {
+    icon: "🔎",
+    title: "Scene intelligence",
+    description: "Analyze scripts and scene text to classify safety risk, feasibility, and crew exposure in real time.",
+  },
+  {
+    icon: "🧭",
+    title: "Motion safety",
+    description: "Map actor and camera lanes, detect conflict zones, and flag risky movement patterns before shooting.",
+  },
+  {
+    icon: "🛡️",
+    title: "Crew guidance",
+    description: "Translate policy into role-specific instructions for actors, camera teams, technicians, and directors.",
+  },
+];
+
+const architectureLayers = [
+  { title: "Input layer", text: "Scene text, PDF scripts, and production notes enter the system as structured requests." },
+  { title: "AI analysis", text: "Groq-powered reasoning identifies risk factors, role exposures, and compliance guidance." },
+  { title: "Decision engine", text: "Feasibility, motion, and collision checks convert insights into production recommendations." },
+  { title: "Output layer", text: "Reports, visuals, and safety briefs are surfaced in a dashboard and preview experience." },
+];
+
+export default function App() {
+  const [scene, setScene] = useState(sampleScene);
+  const [pdfFile, setPdfFile] = useState(null);
+  const [mode, setMode] = useState("text");
+  const [result, setResult] = useState(null);
+  const [imageUrl, setImageUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const insightCards = useMemo(() => {
+    if (!result) {
+      return [
+        { label: "Risk level", value: "Pending", tone: "neutral" },
+        { label: "Feasibility", value: "Awaiting review", tone: "neutral" },
+        { label: "Collision risk", value: "Not checked", tone: "neutral" },
+        { label: "Crew guidance", value: "Drafting", tone: "neutral" },
+      ];
+    }
+
+    const riskTone =
+      result.risk_level === "High"
+        ? "danger"
+        : result.risk_level === "Medium"
+          ? "warning"
+          : "success";
+
+    return [
+      { label: "Risk level", value: result.risk_level || "Medium", tone: riskTone },
+      { label: "Feasibility", value: result.feasibility || "Approved with Conditions", tone: "info" },
+      { label: "Collision risk", value: result.collision_report?.collision_detected ? "Detected" : "Clear", tone: result.collision_report?.collision_detected ? "danger" : "success" },
+      { label: "Role actions", value: `${Object.keys(result.role_based_risks || {}).length} squads`, tone: "neutral" },
+    ];
+  }, [result]);
+
   const analyzeText = async () => {
-    if (!scene.trim()) return;
+    if (!scene.trim()) {
+      setError("Enter a scene description or upload a script before running analysis.");
+      return;
+    }
 
     setLoading(true);
+    setError("");
     setResult(null);
-    setImageUrl(null);
+    setImageUrl("");
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/analyze-scene", {
+      const response = await fetch(`${API_BASE}/analyze-scene`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scene_text: scene }),
       });
 
-      const data = await res.json();
+      if (!response.ok) {
+        throw new Error("Scene analysis failed");
+      }
+
+      const data = await response.json();
       setResult(data);
     } catch (err) {
-      alert("Backend error");
+      setError("The scene analysis service is unavailable. Confirm the backend is running.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
-  /* ---------------- PDF ANALYSIS ---------------- */
   const analyzePDF = async () => {
-    if (!pdf) return;
+    if (!pdfFile) {
+      setError("Select a PDF script before running the file analysis.");
+      return;
+    }
 
     setLoading(true);
+    setError("");
     setResult(null);
-    setImageUrl(null);
+    setImageUrl("");
 
     try {
       const formData = new FormData();
-      formData.append("file", pdf);
+      formData.append("file", pdfFile);
 
-      const res = await fetch("http://127.0.0.1:8000/analyze-pdf", {
+      const response = await fetch(`${API_BASE}/analyze-pdf`, {
         method: "POST",
         body: formData,
       });
 
-      const data = await res.json();
+      if (!response.ok) {
+        throw new Error("PDF analysis failed");
+      }
+
+      const data = await response.json();
       setResult(data);
     } catch (err) {
-      alert("PDF analysis failed");
+      setError("The PDF analysis service is unavailable. Check the file and backend state.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
-  const analyze = () => {
+  const handleAnalyze = () => {
     if (mode === "text") analyzeText();
     else analyzePDF();
   };
 
-  /* ---------------- IMAGE GENERATION ---------------- */
   const generateImage = async () => {
-    if (!scene.trim()) return;
+    if (!scene.trim()) {
+      setError("Add a detailed scene description before generating the preview.");
+      return;
+    }
 
     setImageLoading(true);
-    setImageUrl(null);
+    setImageUrl("");
+    setError("");
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/generate-image", {
+      const response = await fetch(`${API_BASE}/generate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scene_text: scene }),
       });
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setImageUrl(url);
-    } catch (err) {
-      alert("Image generation failed");
-    }
+      if (!response.ok) {
+        throw new Error("Image generation failed");
+      }
 
-    setImageLoading(false);
+      const blob = await response.blob();
+      setImageUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setError("Preview generation failed. The image service may be unavailable.");
+    } finally {
+      setImageLoading(false);
+    }
   };
 
-  const riskColor =
-    result?.risk_level === "High"
-      ? "#ef4444"
-      : result?.risk_level === "Medium"
-      ? "#f59e0b"
-      : "#22c55e";
-
   return (
-    <div style={containerStyle}>
-      <h1 style={titleStyle}>🎬 AI Scene Feasibility & Risk Predictor</h1>
+    <div className="app-shell">
+      <header className="topbar panel">
+        <div className="brand-wrap">
+          <div className="brand-mark">A</div>
+          <div>
+            <div className="brand-name">AstraVision</div>
+            <div className="brand-tag">Production safety intelligence</div>
+          </div>
+        </div>
 
-      {/* MODE TOGGLE */}
-      <div style={{ marginBottom: 20 }}>
-        <button
-          style={mode === "text" ? activeTab : tab}
-          onClick={() => setMode("text")}
-        >
-          Text Scene
-        </button>
-        <button
-          style={mode === "pdf" ? activeTab : tab}
-          onClick={() => setMode("pdf")}
-        >
-          Upload Script PDF
-        </button>
-      </div>
+        <nav className="nav">
+          <a href="#overview">Overview</a>
+          <a href="#workspace">Workspace</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#insights">Insights</a>
+        </nav>
 
-      {/* INPUTS */}
-      {mode === "text" && (
-        <textarea
-          rows={5}
-          style={textareaStyle}
-          placeholder="Describe the scene..."
-          value={scene}
-          onChange={(e) => setScene(e.target.value)}
-        />
-      )}
+        <button className="primary-btn">Launch risk review</button>
+      </header>
 
-      {mode === "pdf" && (
-        <input
-          type="file"
-          accept="application/pdf"
-          onChange={(e) => setPdf(e.target.files[0])}
-          style={{ marginBottom: 20 }}
-        />
-      )}
+      <main className="main-content">
+        <section className="hero panel" id="overview">
+          <div className="hero-copy">
+            <span className="eyebrow">AI scene feasibility platform</span>
+            <h1>Turn script risk into production clarity before the first take.</h1>
+            <p>
+              Evaluate scene safety, actor exposure, camera workflow conflicts, and crew readiness from a single dashboard built for fast decision-making.
+            </p>
 
-      {/* ACTION BUTTONS */}
-      <div style={{ marginBottom: 20 }}>
-        <button style={buttonStyle} onClick={analyze}>
-          Analyze
-        </button>
-
-        {mode === "text" && (
-          <button
-            style={{ ...buttonStyle, marginLeft: 10 }}
-            onClick={generateImage}
-          >
-            Generate Image
-          </button>
-        )}
-      </div>
-
-      {loading && <p>🔍 Analyzing scene...</p>}
-
-      {imageLoading && (
-        <p style={{ marginTop: 10 }}>
-          🎨 Generating scene preview with actor & camera safety...
-        </p>
-      )}
-
-      {/* RESULTS */}
-      {result && (
-        <>
-          <div style={badgeRow}>
-            <span>Risk Level:</span>
-            <span style={{ ...badgeStyle, background: riskColor }}>
-              {result.risk_level}
-            </span>
+            <div className="cta-row">
+              <button className="primary-btn" onClick={() => setMode("text")}>Run scene analysis</button>
+              <button className="secondary-btn" onClick={() => setMode("pdf")}>Upload script PDF</button>
+            </div>
           </div>
 
-          <p>
-            <strong>Feasibility:</strong> {result.feasibility}
-          </p>
-
-          <div style={cardStyle}>
-            <h3>Risk Factors</h3>
-            <ul>
-              {result.risk_factors.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div style={cardStyle}>
-            <h3>Role-Based Risk Prediction</h3>
-            {Object.entries(result.role_based_risks).map(([role, rules]) => (
-              <div key={role}>
-                <h4>{role.toUpperCase()}</h4>
-                <ul>
-                  {rules.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
+          <div className="hero-metrics">
+            {insightCards.map((item) => (
+              <div key={item.label} className={`metric-card ${item.tone}`}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
               </div>
             ))}
           </div>
+        </section>
 
-          <div style={cardStyle}>
-            <h3>Safety Instructions</h3>
-            {Object.entries(result.safety_instructions).map(
-              ([role, rules]) => (
-                <div key={role}>
-                  <h4>{role.toUpperCase()}</h4>
+        <section className="feature-grid">
+          {featureCards.map((feature) => (
+            <article key={feature.title} className="panel feature-card">
+              <div className="feature-icon">{feature.icon}</div>
+              <h3>{feature.title}</h3>
+              <p>{feature.description}</p>
+            </article>
+          ))}
+        </section>
+
+        <section className="architecture-section" id="architecture">
+          <div className="section-header">
+            <span className="section-kicker">System architecture</span>
+            <h2>Four connected layers power every safety decision.</h2>
+          </div>
+
+          <div className="architecture-grid">
+            {architectureLayers.map((layer, index) => (
+              <div key={layer.title} className="panel architecture-card">
+                <div className="step-index">0{index + 1}</div>
+                <h3>{layer.title}</h3>
+                <p>{layer.text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="workspace" id="workspace">
+          <div className="panel analyzer-panel">
+            <div className="section-header compact">
+              <span className="section-kicker">Scene workspace</span>
+              <h2>Production risk review</h2>
+            </div>
+
+            <div className="mode-toggle">
+              <button className={mode === "text" ? "tab active" : "tab"} onClick={() => setMode("text")}>Text scene</button>
+              <button className={mode === "pdf" ? "tab active" : "tab"} onClick={() => setMode("pdf")}>Script PDF</button>
+            </div>
+
+            {mode === "text" ? (
+              <textarea
+                className="text-input"
+                value={scene}
+                onChange={(event) => setScene(event.target.value)}
+                placeholder="Describe the production environment, actor movement, hazards, and crew layout..."
+              />
+            ) : (
+              <div className="upload-box">
+                <label htmlFor="pdf-upload">Upload production script</label>
+                <input
+                  id="pdf-upload"
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(event) => setPdfFile(event.target.files?.[0] || null)}
+                />
+                <span>{pdfFile ? pdfFile.name : "No file selected"}</span>
+              </div>
+            )}
+
+            <div className="action-row">
+              <button className="primary-btn" onClick={handleAnalyze} disabled={loading}>
+                {loading ? "Analyzing..." : "Analyze scene"}
+              </button>
+              {mode === "text" && (
+                <button className="secondary-btn" onClick={generateImage} disabled={imageLoading}>
+                  {imageLoading ? "Generating..." : "Generate preview"}
+                </button>
+              )}
+            </div>
+
+            {error && <div className="alert error">{error}</div>}
+          </div>
+
+          <aside className="panel summary-panel" id="insights">
+            <div className="section-header compact">
+              <span className="section-kicker">Live summary</span>
+              <h2>Decision snapshot</h2>
+            </div>
+
+            {result ? (
+              <>
+                <div className={`risk-badge ${result.risk_level?.toLowerCase() || "medium"}`}>
+                  {result.risk_level || "Medium"}
+                </div>
+                <div className="summary-row">
+                  <span>Feasibility</span>
+                  <strong>{result.feasibility || "Approved with Conditions"}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Collision detection</span>
+                  <strong>{result.collision_report?.collision_detected ? "Alert" : "Clear"}</strong>
+                </div>
+                <div className="summary-list">
+                  <h3>Top risk factors</h3>
                   <ul>
-                    {rules.map((r, i) => (
-                      <li key={i}>{r}</li>
+                    {(result.risk_factors || []).map((item, index) => (
+                      <li key={`${item}-${index}`}>{item}</li>
                     ))}
                   </ul>
                 </div>
-              )
+              </>
+            ) : (
+              <div className="empty-state">
+                <p>Run a risk assessment to populate the decision snapshot.</p>
+              </div>
             )}
-          </div>
+          </aside>
+        </section>
 
-          {/* MOTION MODELING */}
-          {result.motion_paths && (
-            <div style={cardStyle}>
-              <h3>Motion Modeling</h3>
-
-              <p><strong>Actor Path:</strong></p>
+        {result && (
+          <section className="results-grid">
+            <article className="panel result-card">
+              <h3>Risk factors</h3>
               <ul>
-                {result.motion_paths.actor_path.map((p, i) => (
-                  <li key={i}>Step {i + 1}: X={p[0]}, Y={p[1]}</li>
+                {(result.risk_factors || []).map((item, index) => (
+                  <li key={`${item}-${index}`}>{item}</li>
                 ))}
               </ul>
+            </article>
 
-              <p><strong>Camera Path:</strong></p>
-              <ul>
-                {result.motion_paths.camera_path.map((p, i) => (
-                  <li key={i}>Step {i + 1}: X={p[0]}, Y={p[1]}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* COLLISION DETECTION */}
-          {result.collision_report && (
-            <div style={cardStyle}>
-              <h3>Collision Detection</h3>
-
-              {result.collision_report.collision_detected ? (
-                <>
-                  <p style={{ color: "#ef4444", fontWeight: "bold" }}>
-                    Potential safety conflicts detected
-                  </p>
+            <article className="panel result-card">
+              <h3>Role-based risks</h3>
+              {Object.entries(result.role_based_risks || {}).map(([role, items]) => (
+                <div key={role} className="role-block">
+                  <strong>{role}</strong>
                   <ul>
-                    {result.collision_report.issues.map((issue, i) => (
-                      <li key={i}>{issue}</li>
+                    {(items || []).map((item, index) => (
+                      <li key={`${role}-${index}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </article>
+
+            <article className="panel result-card">
+              <h3>Safety instructions</h3>
+              {Object.entries(result.safety_instructions || {}).map(([role, items]) => (
+                <div key={role} className="role-block">
+                  <strong>{role}</strong>
+                  <ul>
+                    {(items || []).map((item, index) => (
+                      <li key={`${role}-${index}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </article>
+
+            <article className="panel result-card">
+              <h3>Motion modeling</h3>
+              <div className="path-list">
+                <div>
+                  <span>Actor path</span>
+                  <ul>
+                    {((result.motion_paths && result.motion_paths.actor_path) || []).map((point, index) => (
+                      <li key={`actor-${index}`}>Step {index + 1}: ({point[0]}, {point[1]})</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span>Camera path</span>
+                  <ul>
+                    {((result.motion_paths && result.motion_paths.camera_path) || []).map((point, index) => (
+                      <li key={`camera-${index}`}>Step {index + 1}: ({point[0]}, {point[1]})</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel result-card">
+              <h3>Collision report</h3>
+              {result.collision_report?.collision_detected ? (
+                <>
+                  <p className="danger-copy">Potential safety conflicts detected.</p>
+                  <ul>
+                    {(result.collision_report.issues || []).map((issue, index) => (
+                      <li key={`${issue}-${index}`}>{issue}</li>
                     ))}
                   </ul>
                 </>
               ) : (
-                <p style={{ color: "#22c55e", fontWeight: "bold" }}>
-                  No collision risks detected
-                </p>
+                <p className="success-copy">No collision risks were flagged for this scene.</p>
               )}
+            </article>
+          </section>
+        )}
+
+        {imageUrl && (
+          <section className="panel image-panel">
+            <div className="section-header compact">
+              <span className="section-kicker">Visual preview</span>
+              <h2>Scene concept image</h2>
             </div>
-          )}
-        </>
-      )}
-    {result?.motion_paths && result?.collision_report && (
-      <MotionVisualization
-        motion={result.motion_paths}
-        collision={result.collision_report}
-      />
-    )}
-
-      {/* IMAGE PREVIEW */}
-      {imageUrl && (
-        <div style={cardStyle}>
-          <h3>Scene Preview</h3>
-          <img
-            src={imageUrl}
-            alt="Scene Preview"
-            style={{ width: "100%", borderRadius: 10 }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-function MotionVisualization({ motion, collision }) {
-  const scale = 60;
-  const offset = 150;
-
-  const toSVGPoint = ([x, y]) => ({
-    x: offset + x * scale,
-    y: offset + y * scale,
-  });
-
-  const actorPoints = motion.actor_path.map(toSVGPoint);
-  const cameraPoints = motion.camera_path.map(toSVGPoint);
-
-  const buildPath = (points) =>
-    points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-
-  return (
-    <div style={cardStyle}>
-      <h3>🧭 Motion Modeling (Top-Down View)</h3>
-
-      <svg
-        width="300"
-        height="300"
-        style={{ background: "#020617", borderRadius: 10 }}
-      >
-        {/* Actor Path */}
-        <path
-          d={buildPath(actorPoints)}
-          stroke="#38bdf8"
-          strokeWidth="3"
-          fill="none"
-        />
-        {actorPoints.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="4" fill="#38bdf8" />
-        ))}
-
-        {/* Camera Path */}
-        <path
-          d={buildPath(cameraPoints)}
-          stroke="#fb923c"
-          strokeWidth="3"
-          fill="none"
-        />
-        {cameraPoints.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="4" fill="#fb923c" />
-        ))}
-
-        {/* Collision */}
-        {collision?.collision_detected &&
-          (collision.collision_points || []).map((pt, i) => {
-            const p = toSVGPoint(pt);
-            return (
-              <circle
-                key={i}
-                cx={p.x}
-                cy={p.y}
-                r="8"
-                fill="red"
-                opacity="0.8"
-              />
-            );
-          })}
-      </svg>
-
-      <p style={{ marginTop: 10, color: "#94a3b8" }}>
-        🔵 Actor &nbsp; 🟠 Camera &nbsp; 🔴 Collision
-      </p>
+            <img src={imageUrl} alt="Generated scene preview" className="preview-image" />
+          </section>
+        )}
+      </main>
     </div>
   );
 }
 
-/* ---------------- STYLES ---------------- */
-
-const containerStyle = {
-  width: "100%",
-  maxWidth: "1100px",
-  margin: "0 auto",
-  padding: 40,
-  color: "white",
-  fontFamily: "Segoe UI",
-  textAlign: "center",
-};
-
-const titleStyle = { marginBottom: 30 };
-
-const textareaStyle = {
-  width: "100%",
-  maxWidth: "900px",
-  padding: 18,
-  borderRadius: 10,
-  background: "#1f2937",
-  color: "white",
-  border: "1px solid #374151",
-  fontSize: 16,
-  marginBottom: 15,
-};
-
-const buttonStyle = {
-  padding: "12px 24px",
-  background: "#2563eb",
-  color: "white",
-  border: "none",
-  borderRadius: 8,
-  fontSize: 16,
-  cursor: "pointer",
-};
-
-const tab = {
-  padding: "10px 18px",
-  marginRight: 10,
-  borderRadius: 6,
-  border: "1px solid #374151",
-  background: "#1f2937",
-  color: "white",
-};
-
-const activeTab = { ...tab, background: "#2563eb" };
-
-const badgeRow = {
-  display: "flex",
-  justifyContent: "center",
-  gap: 10,
-  fontSize: 18,
-};
-
-const badgeStyle = {
-  padding: "6px 12px",
-  borderRadius: 6,
-  fontWeight: "bold",
-};
-
-const cardStyle = {
-  background: "#1f2937",
-  padding: 24,
-  borderRadius: 12,
-  marginTop: 20,
-  border: "1px solid #374151",
-  textAlign: "left",
-};
