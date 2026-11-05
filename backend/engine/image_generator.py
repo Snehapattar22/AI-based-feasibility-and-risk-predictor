@@ -1,15 +1,8 @@
-from diffusers import StableDiffusionPipeline
-import torch
-import uuid
 import os
+import uuid
+from PIL import Image, ImageDraw, ImageFilter
 
 os.makedirs("static", exist_ok=True)
-
-pipe = StableDiffusionPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5",
-    torch_dtype=torch.float32
-)
-pipe = pipe.to("cpu")  # CPU safe
 
 
 def clip_safe_prompt(prompt: str, max_words: int = 60) -> str:
@@ -22,48 +15,50 @@ def build_scene_preview_prompt(scene_text: str, safety: dict) -> str:
     camera_safety = ", ".join(safety.get("camera_crew", [])) or "camera crew behind safety barriers"
 
     return f"""
-photorealistic live-action film scene,
-real human actors, natural skin texture,
-realistic body proportions, realistic physics,
-cinematic lighting, professional film camera,
-35mm lens, shallow depth of field,
-natural motion blur, realistic shadows,
-
-Scene:
-{scene_text}
-
-Safety details:
-- Actors using: {actor_safety}
-- Camera crew safety: {camera_safety}
-
-Composition:
-- Actors placed naturally in the environment
-- Camera positioned safely away from action
-- Clear separation between action and filming zone
-- Environment matches real-world scale
-
-Style:
-photorealistic, live-action movie frame,
-documentary realism, film still,
-NOT cartoon, NOT illustration, NOT CGI
+Production scene preview
+Scene: {scene_text}
+Actor safeguards: {actor_safety}
+Camera crew safeguards: {camera_safety}
 """
-
-
-
 
 
 def generate_scene_image(scene_text: str, safety: dict) -> str:
     prompt = build_scene_preview_prompt(scene_text, safety)
     safe_prompt = clip_safe_prompt(prompt)
 
-    image = pipe(
-        safe_prompt,
-        num_inference_steps=15,
-        guidance_scale=7.0
-    ).images[0]
+    width, height = 1200, 800
+    image = Image.new("RGB", (width, height), (15, 23, 42))
+    draw = ImageDraw.Draw(image)
+
+    # Sky / background
+    draw.rectangle((0, 0, width, height), fill=(15, 23, 42))
+    draw.rectangle((0, height - 200, width, height), fill=(24, 38, 58))
+
+    # Light streaks
+    for x in range(50, width, 110):
+        draw.rectangle((x, 40, x + 30, 180), fill=(59, 130, 246, 80))
+
+    # Actor and camera silhouettes
+    actor_x, actor_y = 240, 430
+    camera_x, camera_y = 760, 360
+
+    draw.ellipse((actor_x - 34, actor_y - 56, actor_x + 34, actor_y + 16), fill=(168, 85, 247))
+    draw.rectangle((actor_x - 28, actor_y + 16, actor_x + 28, actor_y + 120), fill=(59, 130, 246))
+    draw.line((actor_x, actor_y + 18, actor_x - 40, actor_y + 90), fill=(255, 255, 255), width=8)
+    draw.line((actor_x, actor_y + 18, actor_x + 48, actor_y + 90), fill=(255, 255, 255), width=8)
+
+    draw.rectangle((camera_x - 70, camera_y - 40, camera_x + 70, camera_y + 50), fill=(251, 146, 60))
+    draw.circle((camera_x, camera_y - 80), 26, fill=(248, 250, 252))
+    draw.line((camera_x - 40, camera_y + 42, camera_x + 40, camera_y + 42), fill=(255, 255, 255), width=8)
+
+    # Hazard area and path markers
+    draw.rounded_rectangle((540, 240, 900, 520), radius=28, outline=(248, 113, 113), width=5)
+    draw.text((60, 60), "Scene Preview", fill=(255, 255, 255), font=None)
+    draw.text((60, 100), safe_prompt[:100], fill=(203, 213, 225), font=None)
+
+    image = image.filter(ImageFilter.SMOOTH)
 
     filename = f"scene_{uuid.uuid4().hex}.png"
     path = os.path.join("static", filename)
-
     image.save(path)
     return path
